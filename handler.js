@@ -155,13 +155,9 @@ module.exports.sync = (event, context, callback) => {
         console.log('Execute tasks: ' + tasks.length);
         
         async.parallelLimit(tasks, 5, (err, results) => {
-            const response = {
-                statusCode: 200,
-                body: JSON.stringify({
-                    message: 'Synced'
-                })
-            };
-            callback(null, response);
+            const message = 'Synced';
+            console.log(message);
+            callback(null, message);
         });
     }
     
