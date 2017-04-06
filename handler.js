@@ -12,50 +12,16 @@ const scopes = [
 ];
 
 const jwtClient = new google.auth.JWT(
-        key.client_email,
-        null,
-        key.private_key,
-        scopes,
-        null
-    );
+    key.client_email,
+    null,
+    key.private_key,
+    scopes,
+    null
+);
 module.exports.sync = (event, context, callback) => {
+    let insertEvents = [];
+    let deleteEvents = [];
     let tasks = [];
-
-    function pushGcalDeleteTask(nextPageToken) {
-        gcal.events.list({
-            calendarId: config.calendarId,
-            maxResults: 2500,
-            pageToken: nextPageToken,
-            auth: jwtClient
-        }, (err, resp) => {
-            if (err) {
-                console.log(err);
-            }
-            resp.items.forEach((vevent) => {
-                tasks.push((callback) => {
-                    gcal.events.delete({
-                        calendarId: config.calendarId,
-                        auth: jwtClient,
-                        eventId: vevent.id
-                    }, (err, resp) => {
-                        if (err) {
-                            console.log(err);
-                        }
-                        setTimeout(() => {callback(null, resp);}, 1000);
-                    });
-                });
-            });
-
-            console.log('Push gcal delete tasks: ' + resp.items.length);
-            
-            if (resp.nextPageToken) {
-                pushGcalDeleteTask(resp.nextPageToken);
-                return;
-            }
-            
-            executeTask();
-        });
-    } 
 
     function pushGcalInsertTask(vevents) {
         vevents.forEach((vevent) => {
@@ -87,6 +53,7 @@ module.exports.sync = (event, context, callback) => {
                     timeZone: config.timeZone
                 };
             }
+            
             tasks.push((callback) => {
                 gcal.events.insert({
                     calendarId: config.calendarId,
@@ -101,9 +68,92 @@ module.exports.sync = (event, context, callback) => {
             });
         });
     }
+
+    function pushGcalDeleteTask(vevents) {
+        vevents.forEach((vevent) => {
+            tasks.push((callback) => {
+                gcal.events.delete({
+                    calendarId: config.calendarId,
+                    auth: jwtClient,
+                    eventId: vevent.id
+                }, (err, resp) => {
+                    if (err) {
+                        console.log(err);
+                    }
+                    setTimeout(() => {callback(null, resp);}, 1000);
+                });
+            });
+        });
+    }
+    
+    function listGcalEvents(nextPageToken) {
+        gcal.events.list({
+            calendarId: config.calendarId,
+            maxResults: 2500,
+            pageToken: nextPageToken,
+            auth: jwtClient
+        }, (err, resp) => {
+            if (err) {
+                console.log(err);
+            }
+            
+            deleteEvents = deleteEvents.concat(resp.items);
+
+            if (resp.nextPageToken) {
+                listGcalEvents(resp.nextPageToken);
+                return;
+            }
+            
+            executeTask();
+        });
+    } 
     
     function executeTask() {
+        let executeInsertEvents = [];
+        let executeDeleteEvents = deleteEvents;
+        insertEvents.forEach((vevent) => {
+            const event = new ical.Event(vevent);
+            const finded = deleteEvents.find((vevent) => {
+                let iStart, iEnd, dStart, dEnd;
+                if (event.startDate.toString().match(/T/)) {
+                    iStart = new Date(event.startDate.toString() + '+09:00');
+                } else {
+                    iStart = new Date(event.startDate.toString() + 'T00:00:00+09:00');
+                }
+                if (event.endDate.toString().match(/T/)) {
+                    iEnd = new Date(event.endDate.toString() + '+09:00');
+                } else {
+                    iEnd = new Date(event.endDate.toString() + 'T00:00:00+09:00');
+                }
+                if (vevent.start.date) {
+                    dStart = new Date(vevent.start.date + 'T00:00:00+09:00');
+                } else {
+                    dStart = new Date(vevent.start.dateTime);
+                }
+                if (vevent.end.date) {
+                    dEnd = new Date(vevent.end.date + 'T00:00:00+09:00');
+                } else {
+                    dEnd = new Date(vevent.end.dateTime);
+                }
+                return (event.summary == vevent.summary
+                        && event.description == vevent.description
+                        && iStart.getTime() == dStart.getTime()
+                        && iEnd.getTime() == dEnd.getTime());
+            });
+            if (finded) {
+                executeDeleteEvents = executeDeleteEvents.filter((vevent) => {
+                    return vevent != finded;
+                });
+            } else {
+                executeInsertEvents.push(vevent);
+            }
+        });
+
+        pushGcalInsertTask(executeInsertEvents);
+        pushGcalDeleteTask(executeDeleteEvents);
+        
         console.log('Execute tasks: ' + tasks.length);
+        
         async.parallelLimit(tasks, 5, (err, results) => {
             const response = {
                 statusCode: 200,
@@ -118,13 +168,9 @@ module.exports.sync = (event, context, callback) => {
     axios.get(config.icalUrl).then((res) => {
         const component = new ical.Component(ical.parse(res.data));
         const vevents = component.getAllSubcomponents('vevent');
-
-        pushGcalInsertTask(vevents);
-
-        console.log('Push gcal insert tasks: ' + vevents.length);
+        insertEvents = insertEvents.concat(vevents);
         
-        pushGcalDeleteTask(null);
-        
+        listGcalEvents(null);
     }).catch((err) => {
         console.log(err);
     });
