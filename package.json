@@ -1,0 +1,22 @@
+{
+  "name": "serverless-ical2gcal",
+  "version": "0.1.0",
+  "description": "URL based iCal => Google Calendar",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "aipo"
+  ],
+  "author": "k1LoW",
+  "license": "MIT",
+  "dependencies": {
+    "async": "^2.3.0",
+    "axios": "^0.16.0",
+    "google-auth-library": "^0.10.0",
+    "googleapis": "^18.0.0",
+    "ical.js": "^1.2.2",
+    "serverless": "^1.10.2"
+  }
+}
