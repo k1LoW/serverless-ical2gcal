@@ -1,6 +1,6 @@
 # serverless-ical2gcal
 
-URL based iCal => Google Calendar
+URL based iCalendar => Google Calendar
 
 ## Usage
 
