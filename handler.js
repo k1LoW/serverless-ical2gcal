@@ -53,7 +53,7 @@ module.exports.sync = (event, context, callback) => {
                     timeZone: config.timeZone
                 };
             }
-            
+
             tasks.push((callback) => {
                 gcal.events.insert({
                     calendarId: config.calendarId,
@@ -85,7 +85,7 @@ module.exports.sync = (event, context, callback) => {
             });
         });
     }
-    
+
     function listGcalEvents(nextPageToken) {
         gcal.events.list({
             calendarId: config.calendarId,
@@ -96,18 +96,18 @@ module.exports.sync = (event, context, callback) => {
             if (err) {
                 console.log(err);
             }
-            
+
             deleteEvents = deleteEvents.concat(resp.items);
 
             if (resp.nextPageToken) {
                 listGcalEvents(resp.nextPageToken);
                 return;
             }
-            
+
             executeTask();
         });
-    } 
-    
+    }
+
     function executeTask() {
         let executeInsertEvents = [];
         let executeDeleteEvents = deleteEvents;
@@ -151,21 +151,25 @@ module.exports.sync = (event, context, callback) => {
 
         pushGcalInsertTask(executeInsertEvents);
         pushGcalDeleteTask(executeDeleteEvents);
-        
+
         console.log('Execute tasks: ' + tasks.length);
-        
+
         async.parallelLimit(tasks, 5, (err, results) => {
             const message = 'Synced';
             console.log(message);
             callback(null, message);
         });
     }
-    
+
     axios.get(config.icalUrl).then((res) => {
         const component = new ical.Component(ical.parse(res.data));
         const vevents = component.getAllSubcomponents('vevent');
+        if (vevents.length == 0) {
+            throw 'Can not get vevents from URL';
+        }
+
         insertEvents = insertEvents.concat(vevents);
-        
+
         listGcalEvents(null);
     }).catch((err) => {
         console.log(err);
